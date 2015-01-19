@@ -100,6 +100,12 @@ if __name__ == '__main__':
     scraper = Scraper(api_key='MW9S-E7SL-26DU-VV8V', stores=[dfs, csvs])
 
     while True:
-        scraper.fetch()
-        scraper.sync()
-        time.sleep(60)
+        start_time = time.time()
+        try:
+            scraper.fetch()
+            scraper.sync()
+        except Exception as e:
+            print e.message
+        end_time = time.time()
+        duration = end_time - start_time
+        time.sleep(min([0, 60 - duration]))
