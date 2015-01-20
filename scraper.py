@@ -76,13 +76,14 @@ class Scraper(object):
         for station in raw['root']['station']:
             if station['abbr'] in STATIONS:
                 for line in station['etd']:
-                    if line['destination'] == 'SFO/Millbrae':
+                    if line['destination'] in ['SFO/Millbrae', 'SF Airport', 'Daly City', 'Millbrae']:
                         for index, estimate in enumerate(line['estimate']):
-                            if estimate['minutes'] == 'Leaving':
-                                minutes = 0
-                            else:
-                                minutes = int(estimate['minutes'])
-                            output[station['abbr'] + '_' + str(index)] = minutes
+                            if estimate['color'] == 'YELLOW':
+                                if estimate['minutes'] == 'Leaving':
+                                    minutes = 0
+                                else:
+                                    minutes = int(estimate['minutes'])
+                                output[station['abbr'] + '_' + str(index)] = minutes
 
         sorted_output = collections.OrderedDict(sorted(output.items()))
         self.last_fetch = sorted_output
@@ -102,10 +103,10 @@ if __name__ == '__main__':
     while True:
         start_time = time.time()
         try:
-            scraper.fetch()
+            x = scraper.fetch()
             scraper.sync()
         except Exception as e:
             print e.message
         end_time = time.time()
         duration = end_time - start_time
-        time.sleep(min([0, 60 - duration]))
+        time.sleep(max([0, 10 - duration]))
