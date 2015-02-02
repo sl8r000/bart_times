@@ -4,7 +4,8 @@ import xmltodict
 import dateutil
 import collections
 import pandas as pd
-import time
+import time, datetime
+import traceback
 
 STATIONS = ['ROCK', 'MCAR', '19TH', '12TH', 'WOAK', 'EMBR', 'MONT', 'POWL', 'CIVC']
 
@@ -29,7 +30,7 @@ class DFStore(Store):
 
         if self.filename is not None:
             with open(self.filename, 'w') as stream:
-                stream.write(self.df.to_csv())
+                self.df.to_csv(stream)
 
     def get(self):
         return self.df
@@ -63,11 +64,16 @@ class Scraper(object):
         self.last_fetch = None
         self.stores = stores
 
+	with open('_dumb_store.txt', 'w') as stream:
+	    stream.write('dumb_store\n')
+
     def fetch(self):
         output = dict()
 
         resp = requests.get(self.url)
+
         if not resp.ok:
+	    print 'bad response'
             resp.raise_for_status()
 
         raw = xmltodict.parse(resp.text)
@@ -77,13 +83,21 @@ class Scraper(object):
             if station['abbr'] in STATIONS:
                 for line in station['etd']:
                     if line['destination'] in ['SFO/Millbrae', 'SF Airport', 'Daly City', 'Millbrae']:
-                        for index, estimate in enumerate(line['estimate']):
-                            if estimate['color'] == 'YELLOW':
-                                if estimate['minutes'] == 'Leaving':
-                                    minutes = 0
-                                else:
-                                    minutes = int(estimate['minutes'])
-                                output[station['abbr'] + '_' + str(index)] = minutes
+                        estimates = line['estimate']
+			if type(estimates) != list:
+			    estimates = [estimates]
+			for index, estimate in enumerate(estimates):
+			    try:
+                            	if estimate['color'] == 'YELLOW':
+                                    if estimate['minutes'] == 'Leaving':
+                                        minutes = 0
+                                    else:
+                                        minutes = int(estimate['minutes'])
+                                    output[station['abbr'] + '_' + str(index)] = minutes
+			    except Exception:
+				with open('_dumb_store.txt', 'a') as stream:
+				    stream.write(resp.text)
+				    stream.write('\n')
 
         sorted_output = collections.OrderedDict(sorted(output.items()))
         self.last_fetch = sorted_output
@@ -106,7 +120,10 @@ if __name__ == '__main__':
             x = scraper.fetch()
             scraper.sync()
         except Exception as e:
+	    print datetime.datetime.now()
             print e.message
+	    print traceback.format_exc()
+	    print ''
         end_time = time.time()
         duration = end_time - start_time
-        time.sleep(max([0, 10 - duration]))
+        time.sleep(max([0, 60 - duration]))
