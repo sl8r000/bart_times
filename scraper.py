@@ -6,6 +6,9 @@ import collections
 import pandas as pd
 import time, datetime
 import traceback
+import logging
+
+logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.ERROR)
 
 STATIONS = ['ROCK', 'MCAR', '19TH', '12TH', 'WOAK', 'EMBR', 'MONT', 'POWL', 'CIVC']
 
@@ -59,45 +62,41 @@ class Scraper(object):
         if api_key is None:
             api_key = os.environ['BART_API_KEY']
         self.api_key = api_key
-        self.url = 'http://api.bart.gov/api/etd.aspx?key={api_key}&cmd=etd&orig=all'
+        self.url = 'http://api.bart.gov/api/etd.aspx?key={api_key}&cmd=etd&orig=all'.format(api_key=self.api_key)
 
         self.last_fetch = None
         self.stores = stores
 
-	with open('_dumb_store.txt', 'w') as stream:
-	    stream.write('dumb_store\n')
-
     def fetch(self):
         output = dict()
-
         resp = requests.get(self.url)
 
-        if not resp.ok:
-	    print 'bad response'
-            resp.raise_for_status()
+        try:
+            raw = xmltodict.parse(resp.text)
+            output['time'] = dateutil.parser.parse(raw['root']['date'] + ' ' + raw['root']['time'])
 
-        raw = xmltodict.parse(resp.text)
-        output['time'] = dateutil.parser.parse(raw['root']['date'] + ' ' + raw['root']['time'])
-
-        for station in raw['root']['station']:
-            if station['abbr'] in STATIONS:
-                for line in station['etd']:
-                    if line['destination'] in ['SFO/Millbrae', 'SF Airport', 'Daly City', 'Millbrae']:
-                        estimates = line['estimate']
-			if type(estimates) != list:
-			    estimates = [estimates]
-			for index, estimate in enumerate(estimates):
-			    try:
-                            	if estimate['color'] == 'YELLOW':
-                                    if estimate['minutes'] == 'Leaving':
-                                        minutes = 0
-                                    else:
-                                        minutes = int(estimate['minutes'])
-                                    output[station['abbr'] + '_' + str(index)] = minutes
-			    except Exception:
-				with open('_dumb_store.txt', 'a') as stream:
-				    stream.write(resp.text)
-				    stream.write('\n')
+            for station in raw['root']['station']:
+                if station['abbr'] in STATIONS:
+                    for line in station['etd']:
+                        if line['destination'] in ['SFO/Millbrae', 'SF Airport', 'Daly City', 'Millbrae']:
+                            estimates = line['estimate']
+                            if type(estimates) != list:
+                                estimates = [estimates]
+                            for index, estimate in enumerate(estimates):
+                                try:
+                                    if estimate['color'] == 'YELLOW':
+                                        if estimate['minutes'] == 'Leaving':
+                                            minutes = 0
+                                        else:
+                                            minutes = int(estimate['minutes'])
+                                        output[station['abbr'] + '_' + str(index)] = minutes
+                                except Exception:
+                                    with open('_dumb_store.txt', 'a') as stream:
+                                        stream.write(resp.text)
+                                        stream.write('\n')
+        except Exception as e:
+            print resp.url
+            logging.error('Fetch failed.\n\t Response: {resp} \n\t Error: {error}'.format(resp=resp.text, error=e.message))
 
         sorted_output = collections.OrderedDict(sorted(output.items()))
         self.last_fetch = sorted_output
@@ -120,10 +119,7 @@ if __name__ == '__main__':
             x = scraper.fetch()
             scraper.sync()
         except Exception as e:
-	    print datetime.datetime.now()
-            print e.message
-	    print traceback.format_exc()
-	    print ''
+            logging.error(traceback.format_exc())
         end_time = time.time()
         duration = end_time - start_time
-        time.sleep(max([0, 60 - duration]))
+        time.sleep(max([0, 30 - duration]))
